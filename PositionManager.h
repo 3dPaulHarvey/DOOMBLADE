@@ -16,8 +16,9 @@ public:
       stepsToAccelerate(stepsToAccelerate), decelerationSteps(decelerationSteps), req(req) {}
 
     // Motor control functions
+    inline void holdPosition(float position);
     inline void holdPositionDuration(float position, float duration);
-    inline void homing(float& commandedPosition, float& currentPosition);
+    inline bool homing(float& commandedPosition, float& currentPosition);
     
     inline void performAcceleration(float& commandedPosition, float& currentPosition);
     inline void performCruising(float& commandedPosition, float& currentPosition);
@@ -53,13 +54,13 @@ void PositionManager::performAcceleration(float& commandedPosition, float& curre
 
     float currentVelocity = 0.0f;
     float accelerationPerStep = -maxSpeed / stepsToAccelerate; // Negative for reverse direction
-    std::cout << "Reverse Acceleration Per Step: " << accelerationPerStep << std::endl;
+    std::cout << "Acceleration Per Step: " << accelerationPerStep << std::endl;
 
     for (int i = 1; i <= stepsToAccelerate; i++) {
         currentVelocity += accelerationPerStep;
         float newPosition = accelPositions.back() + currentVelocity;
         accelPositions.push_back(newPosition);
-        std::cout << "Current Reverse Velocity: " << currentVelocity << "\tNew Reverse Position: " << newPosition << std::endl;
+        std::cout << "CurrentVelocity: " << currentVelocity << "\tNewPosition: " << newPosition << std::endl;
     }
 
     for (size_t i = 0; i < accelPositions.size(); i++) {
@@ -71,7 +72,7 @@ void PositionManager::performAcceleration(float& commandedPosition, float& curre
             currentPosition = controller_state[0];
             torques.push_back(controller_state[2]);
         }
-        std::cout << "Reverse Step: " << i << ", Target: " << accelPositions[i]
+        std::cout << "Step: " << i << ", Target: " << accelPositions[i]
                   << ", Actual: " << currentPosition << "\tVelocity" << controller_state[1] << std::endl;
     }
 }
@@ -88,7 +89,7 @@ void PositionManager::performCruising(float& commandedPosition, float& currentPo
             currentPosition = controller_state[0];
             torques.push_back(controller_state[2]);
         }
-        std::cout << "Reverse Cruising at position: " << currentPosition << "\tVelocity" << controller_state[1] << "\tTorque" << controller_state[2] << std::endl;
+        std::cout << "Cruising at position: " << currentPosition << "\tVelocity" << controller_state[1] << "\tTorque" << controller_state[2] << std::endl;
     }
 }
 
@@ -108,10 +109,10 @@ void PositionManager::performDeceleration(float& commandedPosition, float& curre
             currentPosition = controller_state[0];
             torques.push_back(controller_state[2]);
         }
-        std::cout << "Reverse Decelerating, step " << step + 1 << ": Position = " << controller_state[0]
+        std::cout << "Decelerating, step " << step + 1 << ": Position = " << controller_state[0]
                   << ": Velocity = " << controller_state[1] << std::endl;
         if (currentVelocity >= 0) { // Check for stopping condition
-            std::cout << "Reverse Deceleration complete at step " << step + 1 << std::endl;
+            std::cout << "Deceleration complete at step " << step + 1 << std::endl;
             break;
         }
     }
@@ -207,8 +208,21 @@ void PositionManager::holdPositionDuration(float position, float duration) {
     }
 }
 
+// HOLD POSITION 
+void PositionManager::holdPosition(float position) {
+
+    struct timespec req = {0, 1200 * 1000};
+    controller.sendWriteCommand(position, 0.0);
+    nanosleep(&req, NULL);
+    auto controller_state = controller.sendReadCommand();
+    if (controller_state[0] >= 450 && controller_state[0] <= 550) {
+        torques.push_back(controller_state[2]);
+    }
+    //std::cout << "Position: " << controller_state[0] << " Velocity: " << controller_state[1] << " Torque: " << controller_state[2] << std::endl;
+}
+
 // HOMING
-void PositionManager::homing(float& commandedPosition, float& currentPosition) {    
+bool PositionManager::homing(float& commandedPosition, float& currentPosition) {    
     std::cout << "Starting Homing..." << std::endl;
     controller.sendRezeroCommand(500.0); // sets the current position to 500.0
     int index = 0;
@@ -233,7 +247,7 @@ void PositionManager::homing(float& commandedPosition, float& currentPosition) {
                         auto controller_state = controller.sendReadCommand();
                         torques.push_back(controller_state[2]);
                     }
-                    break;
+                    return false;
                 }
             }
             // Check if the button is pressed
@@ -248,7 +262,7 @@ void PositionManager::homing(float& commandedPosition, float& currentPosition) {
     commandedPosition = 500.0f;
     currentPosition = 500.0f;
     std::cout << "HOMED" << std::endl; 
-    return; 
+    return true; 
 } // End HOMING
 
 #endif // POSITION_MANAGER_H

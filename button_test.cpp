@@ -23,6 +23,13 @@ int main() {
         return 1;
     }
 
+    MyGpio button4("gpiochip0", 21);  //SAFETY BUTTON
+
+    if (!button4.init()) {
+        std::cerr << "Failed to initialize GPIO button" << std::endl;
+        return 1;
+    }
+
 
     while (true) {
         //button1
@@ -63,6 +70,20 @@ int main() {
 
         if (value3 == 0) {
             std::cout << "Button pressed3333333333333333333333333333333333!" << std::endl;
+        } else {
+            std::cout << "Button not pressed." << std::endl;
+        }
+
+        //button4
+        int value4 = button4.readValue();
+
+        if (value4 == -1) {
+            std::cerr << "Error reading GPIO value" << std::endl;
+            break;
+        }
+
+        if (value4 == 0) {
+            std::cout << "Button pressed44444444444444444444444444444444444444444444444!" << std::endl;
         } else {
             std::cout << "Button not pressed." << std::endl;
         }
