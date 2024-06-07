@@ -36,7 +36,7 @@ int main() {
     MyGpio safetySwitch("gpiochip0", 21);  //SAFETY BUTTON
 
     if (!safetySwitch.init()) {
-        std::cerr << "Failed to initialize GPIO button" << std::endl;
+        std::cerr << "Failed to initialize safety button" << std::endl;
         return 1;
     }
 
@@ -48,16 +48,20 @@ int main() {
     }
     controller.sendStopCommand();  //gets controller to a known state
     controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
-
-
-    // Initialization
+/////////////////////////////////////////////////////////////////////////////////////////////////////////  
+/////////////////////////////////////////////////////////////////////////////////////////////////////////  
+//////////Initialization  
     std::vector<float> torques;
     const float startPosition = 500.0f;
-    const float cruisingEndPosition = 480.0f; // + 2.2f;
-    const float cruisingReverseEndPosition = 520.0f; // - 1.10f;
-    const float stepsToAccelerate = 50.0f;  
-    const float decelerationSteps = 20.0f; 
-    const float maxSpeed = 0.055f;       // Max speed in units per control loop iteration
+    const float cruisingEndPosition = 496.0f;  //493.0f
+    const float cruisingReverseEndPosition = 503.8f; // 506.0f
+    const float stepsToAccelerate = 30.0f;  
+    const float decelerationSteps = 10.0f; 
+    const float maxSpeed = 0.065f;       // Max speed in units per control loop iteration
+    const float decelerationPerStep = (maxSpeed / stepsToAccelerate);
+    std::cout << "Deceleration per step: " << decelerationPerStep << std::endl;
+    std::cout << "Deceleration per step x 20 setps: " << decelerationPerStep*20.0f << std::endl;
+
     struct timespec req = {0, 1200 * 1000}; // Control loop frequency
     float commandedPosition = startPosition;
     float currentPosition = startPosition;
@@ -69,51 +73,69 @@ int main() {
     bool homingSuccess = false;
     bool obstruction_encountered = false;
     bool safety_ok = false;
+    float safetyHoldPosition = 500.0f;
+    float extendHoldPosition = 500.0f;
+    float positionAverage = 500.0f;
 
+
+    // SYSTEM STATE MACHINE
     while (true) {
 
+        //SAFETY CHECK
         safety_ok = safetySwitch.readValue(); // Synchronously check the safety button
         if (!safety_ok) {
             state = MotorState::SafetyLockout;
+            //break;
         }
+        //INITIAL
         if (state == MotorState::Initial) {
             std::cout << "Initial state. Checking system status..." << std::endl;
             nanosleep(&req, NULL);
-            if (homeLimitSwitch.readValue() == 0) {
+            if (homeLimitSwitch.readValue() == 0) {  ///////////////// 0
                 state = MotorState::Homing;
             } else {
                 state = MotorState::WaitingToHome;
             }
         }
+        //WAITING TO HOME
         else if (state == MotorState::WaitingToHome) {
-            std::cout << "Waiting to home..." << std::endl;
+            //std::cout << "Waiting to home..." << std::endl;
             positionManager.holdPosition(commandedPosition);
             if (activateSwitch.readValue() == 0) {
                 state = MotorState::Homing;
             }
+            if (homeLimitSwitch.readValue() == 0) {
+                state = MotorState::Homing;
+            }
         }
+        //HOMING
         else if (state == MotorState::Homing) {
             std::cout << "Homing..." << std::endl;
+            controller.sendStopCommand();  //gets controller to a known state
+            controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
+            commandedPosition = 500.0f;
             homingSuccess = positionManager.homing(commandedPosition, currentPosition);
-            positionManager.holdPositionDuration(commandedPosition, 0.5);
             if (homingSuccess) {
                 state = MotorState::Homed;
             } else {
                 state = MotorState::WaitingToHome;
             }
         }
+        //HOMED
         else if (state == MotorState::Homed) {
             std::cout << "System is homed, ready for next command." << std::endl;
             state = MotorState::WaitingToExtend;
         }
+        //WAITING TO EXTEND
         else if (state == MotorState::WaitingToExtend) {
-            std::cout << "Waiting to extend..." << std::endl;
-            positionManager.holdPosition(commandedPosition);
+            //std::cout << "Waiting to extend..." << std::endl;
+            positionManager.holdPosition(currentPosition);
             if (activateSwitch.readValue() == 0) {
                 state = MotorState::Extending;
             }
         }
-        else if (state == MotorState::Extending) {
+        //EXTENDING
+        else if (state == MotorState::Extending) {  
             std::cout << "Extending..." << std::endl;
             // Perform Forward motion
             controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
@@ -121,17 +143,36 @@ int main() {
             currentPosition = 500.0f;
             positionManager.performAcceleration(commandedPosition, currentPosition);
             positionManager.performCruising(commandedPosition, currentPosition);
-            positionManager.performDeceleration(commandedPosition, currentPosition);
-            positionManager.holdPositionDuration(commandedPosition, 0.5);
+            extendHoldPosition = positionManager.performDeceleration(commandedPosition, currentPosition);
+            positionAverage = (commandedPosition + currentPosition) / 2.0f;
+            positionManager.holdPositionDuration(positionAverage, 1.0f);
+            std::cout << commandedPosition << "\t" << currentPosition << "\t" << positionManager.tripleQuery() << std::endl;
+            controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
+            commandedPosition = 500.0f;
+            currentPosition = 500.0f;
+            positionManager.holdPositionDuration(commandedPosition, 0.5f);
+
+            // if (extendLimitSwitch.readValue() == 0) {
+            //     state = MotorState::Extended;
+            // }else{
+            //     state = MotorState::ExtendError;
+            // }
             state = MotorState::Extended;
+
+            ///////////////////////////////////////////////////////// //Graph the torque values collected
+            // GraphPlotter plotter;
+            // plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
+            // return 0;
         }
+        //EXTENDED
         else if (state == MotorState::Extended) {
-            std::cout << "System has been successfully extended." << std::endl;
+            // std::cout << "System has been successfully extended." << std::endl;
             positionManager.holdPosition(commandedPosition);
             if (activateSwitch.readValue() == 0) {
                 state = MotorState::Sheathing;
             }
         }
+        //SHEATHING
         else if (state == MotorState::Sheathing) {
             std::cout << "Sheathing..." << std::endl;
             // Perform Reverse motion
@@ -140,62 +181,49 @@ int main() {
             currentPosition = 500.0f;
             positionManager.performAccelerationReverse(commandedPosition, currentPosition);
             positionManager.performCruisingReverse(commandedPosition, currentPosition);
-            positionManager.performDecelerationReverse(commandedPosition, currentPosition);
-            //positionManager.holdPositionDuration(commandedPosition, 0.5);
 
+            /////////////////////////////////////////////////////// //Graph the torque values collected
+            GraphPlotter plotter;
+            plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
+            return 0;
+
+            positionManager.performDecelerationReverse(commandedPosition, currentPosition);
+            positionAverage = (commandedPosition + currentPosition) / 2.0f;
+            positionManager.holdPositionDuration(positionAverage, 0.1f);
+            std::cout << commandedPosition << "\t" << currentPosition << "\t" << positionManager.tripleQuery() << std::endl;
             if (obstruction_encountered) {
                 state = MotorState::WaitingToHome;
             } else {
                 state = MotorState::Homing;
             }
+
         }
-        
+        //EXTEND ERROR
         else if (state == MotorState::ExtendError) {
             std::cout << "Extension error: extend limit switch was not activated." << std::endl;
-            nanosleep(&req, NULL);
+            nanosleep(&req2, NULL);
             state = MotorState::Initial;
         }
+        //SAFETY LOCKOUT
         else if (state == MotorState::SafetyLockout) {
             std::cout << "SAFETY LOCKOUT - The system is in a locked state until the safety button is engaged." << std::endl;
             // Wait in safety lockout state until the safety button is pressed
-            if (safetySwitch.readValue() == 0) {
-                state = MotorState::Initial;  // Reset to initial state
-            }
-            positionManager.holdPosition(commandedPosition);
+            safetyHoldPosition = positionManager.tripleQuery();
+          
+                if (safetySwitch.readValue() == 1) {
+                    state = MotorState::Initial;  // Reset to initial state
+                }
+                positionManager.holdPosition(commandedPosition);
+       
             
+            
+
         }
 
-        // Additional states and their handling can be added here.
     }// END While
 
 
-
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // // Homing
-    // positionManager.holdPositionDuration(commandedPosition, 0.5);
-    // positionManager.homing(commandedPosition, currentPosition);
-    // positionManager.holdPositionDuration(commandedPosition, 0.5);
-
-    // // Perform Forward motion
-    // controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
-    // commandedPosition = 500.0f;
-    // currentPosition = 500.0f;
-    // positionManager.performAcceleration(commandedPosition, currentPosition);
-    // positionManager.performCruising(commandedPosition, currentPosition);
-    // positionManager.performDeceleration(commandedPosition, currentPosition);
-    // positionManager.holdPositionDuration(commandedPosition, 0.5);
-
-    // // Perform Reverse motion
-    // controller.sendRezeroCommand(500.0f); // sets the current position to 500.0
-    // commandedPosition = 500.0f;
-    // currentPosition = 500.0f;
-    // positionManager.performAccelerationReverse(commandedPosition, currentPosition);
-    // positionManager.performCruisingReverse(commandedPosition, currentPosition);
-    // positionManager.performDecelerationReverse(commandedPosition, currentPosition);
-    // positionManager.holdPositionDuration(commandedPosition, 0.5);
-
-//////////////////////////////////////////////////////////////////////////////////////////
 
     // Stop the motor
     //controller.sendStopCommand();
