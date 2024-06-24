@@ -53,11 +53,11 @@ int main() {
 //////////Initialization  
     std::vector<float> torques;
     const float startPosition = 500.0f;
-    const float cruisingEndPosition = 496.0f;  //493.0f
-    const float cruisingReverseEndPosition = 503.8f; // 506.0f
+    const float cruisingEndPosition = 497.0f;  //496.0f  0.6 gear
+    const float cruisingReverseEndPosition = 501.8f; // 503.8f 0.6 gear
     const float stepsToAccelerate = 30.0f;  
     const float decelerationSteps = 10.0f; 
-    const float maxSpeed = 0.065f;       // Max speed in units per control loop iteration
+    const float maxSpeed = 0.005f; //0.065      // Max speed in units per control loop iteration
     const float decelerationPerStep = (maxSpeed / stepsToAccelerate);
     std::cout << "Deceleration per step: " << decelerationPerStep << std::endl;
     std::cout << "Deceleration per step x 20 setps: " << decelerationPerStep*20.0f << std::endl;
@@ -84,6 +84,10 @@ int main() {
         //SAFETY CHECK
         safety_ok = safetySwitch.readValue(); // Synchronously check the safety button
         if (!safety_ok) {
+            ///////////////////////////////////////////////////// //Graph the torque values collected
+            GraphPlotter plotter;
+            plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
+            return 0;
             state = MotorState::SafetyLockout;
             //break;
         }
@@ -183,13 +187,13 @@ int main() {
             positionManager.performCruisingReverse(commandedPosition, currentPosition);
 
             /////////////////////////////////////////////////////// //Graph the torque values collected
-            GraphPlotter plotter;
-            plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
-            return 0;
+            // GraphPlotter plotter;
+            // plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
+            // return 0;
 
             positionManager.performDecelerationReverse(commandedPosition, currentPosition);
             positionAverage = (commandedPosition + currentPosition) / 2.0f;
-            positionManager.holdPositionDuration(positionAverage, 0.1f);
+            positionManager.holdPositionDuration(positionAverage, 0.5f);
             std::cout << commandedPosition << "\t" << currentPosition << "\t" << positionManager.tripleQuery() << std::endl;
             if (obstruction_encountered) {
                 state = MotorState::WaitingToHome;

@@ -70,9 +70,9 @@ void PositionManager::changeMaxSpeed(float newMaxSpeed) {
 
 // ACCELERATION
 void PositionManager::performAcceleration(float& commandedPosition, float& currentPosition) {
+    std::cout << "ACCELERATION" << std::endl;
     std::vector<float> accelPositions;
     accelPositions.push_back(currentPosition); // Assuming currentPosition is rezeroed at 500.0
-    std::cout << "ACCELERATION" << std::endl;
 
     float currentVelocity = 0.0f;
     float accelerationPerStep = -maxSpeed / stepsToAccelerate; 
@@ -104,32 +104,70 @@ void PositionManager::performAcceleration(float& commandedPosition, float& curre
 
 // CRUISING 
 void PositionManager::performCruising(float& commandedPosition, float& currentPosition) {
-    float stableReverseVelocity = -maxSpeed; 
-    int index = 0;
     std::cout << "CRUISING" << std::endl;
-    while (currentPosition >= cruisingEndPosition) { 
-        index++;
-        //auto start = std::chrono::high_resolution_clock::now();
-        commandedPosition += stableReverseVelocity;
+    float stableVelocity = -maxSpeed;
+    int index = 0;
+    while (currentPosition >= cruisingEndPosition) {
+        commandedPosition += stableVelocity;
         controller.sendWriteCommand(commandedPosition, std::numeric_limits<float>::quiet_NaN());
         nanosleep(&req, nullptr);
         auto controller_state = controller.sendReadCommand();
+        index++;
         if (controller_state[0] >= 450 && controller_state[0] <= 550) {
             currentPosition = controller_state[0];
             torques.push_back(controller_state[2]);
+            // std::cout << "torque: " << controller_state[2] << std::endl;
+
+            if (index > 23) {
+                if (controller_state[2] >= 0.20) {  // Check for torque limit indicating a stall or similar issue
+                    std::cout << "High torque/stall detected, stopping at position: " << currentPosition << "at index" << index << std::endl;
+                    //Move forward a little bit
+                    std::cout << "extendLimitSwitch.readValue() " << extendLimitSwitch.readValue() << std::endl;
+
+                    // long holdTime = static_cast<long>(0.05 * 1000000 / 1025);
+                    // struct timespec req = {0, 1200 * 1000};
+                    // for (long i = 0; i < holdTime; i++) {
+                    // controller.sendWriteCommand(std::numeric_limits<float>::quiet_NaN(), 0.0);
+                    // nanosleep(&req, NULL);
+                    // auto controller_state = controller.sendReadCommand();
+                    // if (controller_state[0] >= 450 && controller_state[0] <= 550) {
+                    //     torques.push_back(controller_state[2]);
+                    // }
+
+                    // for (int i = 0; i < 250; i++) {
+                    //     //ramp up to -2.5
+                    //     nanosleep(&req, NULL);
+                    //     torques.push_back(controller_state[2]);
+                    // }
+                    controller.sendStopCommand();  //gets controller to a known state
+                    controller.sendRezeroCommand(500.0f); // sets the current position to 500.0f
+                    commandedPosition = 500.0f;
+                    currentPosition = 500.0f;
+                    
+
+                    // for (int i = 0; i < 100; i++) {
+                    //     //ramp up to -2.5
+                    //     controller.sendWriteCommand(std::numeric_limits<float>::quiet_NaN(), -2.5 * (i / 100.0));
+                    //     nanosleep(&req, NULL);        
+                    //     auto controller_state = controller.sendReadCommand();
+                    //     torques.push_back(controller_state[2]);
+                    // }
+                    for (int i = 0; i < 250; i++) {
+                        //ramp up to -2.5
+                        controller.sendWriteCommand(std::numeric_limits<float>::quiet_NaN(), -2.5);
+                        nanosleep(&req, NULL);        
+                        auto controller_state = controller.sendReadCommand();
+                        torques.push_back(controller_state[2]);
+                    }
+                    return;                    
+                }
+            }
         }
         std::cout << index << "\t" << controller_state[2] << "\tTarget: " << commandedPosition
                   << "\tActual: " << currentPosition << "\t" << std::abs(commandedPosition - currentPosition) <<  "\tVelocity: " << controller_state[1] << std::endl;
 
-       //std::cout << "Cruise target: " << commandedPosition << "\tActual: " << currentPosition << "\tVel" << controller_state[1] << "\tTor" << controller_state[2] << std::endl;
-        if (extendLimitSwitch.readValue() == 0) {  
-            std::cout << "Button pressed, stopping at position: " << currentPosition << std::endl;
-            break;
-        }
-        // auto end = std::chrono::high_resolution_clock::now();
-        // auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        // std::cout << "Time taken: " << elapsed.count() << " microseconds" << std::endl;
-    }
+
+    }// end while
 }
 
 // DECELERATION
@@ -224,7 +262,7 @@ void PositionManager::performCruisingReverse(float& commandedPosition, float& cu
             torques.push_back(controller_state[2]);
             // std::cout << "torque: " << controller_state[2] << std::endl;
 
-            if (index > 23) {
+            if (index >13) {
                 if (controller_state[2] >= 0.20) {  // Check for torque limit indicating a stall or similar issue
                     std::cout << "High torque/stall detected, stopping at position: " << currentPosition << "at index" << index << std::endl;
                     //Move forward a little bit
@@ -278,6 +316,7 @@ void PositionManager::performCruisingReverse(float& commandedPosition, float& cu
 
 // DECELERATION REVERSE
 void PositionManager::performDecelerationReverse(float& commandedPosition, float& currentPosition) {
+    std::cout << "DECELERATION REVERSE" << std::endl;
     float stableVelocity = maxSpeed;
     float currentVelocity = stableVelocity;
     float decelerationRate = stableVelocity / decelerationSteps;
@@ -383,7 +422,7 @@ bool PositionManager::homing(float& commandedPosition, float& currentPosition) {
             //std::cout << "Current Position: " << controller_state[0] << " Velocity: " << controller_state[1] << " Torque: " << controller_state[2] << std::endl;
             //torques.push_back(controller_state[2]);
             if (index > 20) {
-                if (controller_state[2] >= 0.09) {  // Check for torque limit indicating a stall or similar issue
+                if (controller_state[2] >= 0.13) {  // Check for torque limit indicating a stall or similar issue
                     std::cout << "High torque/stall detected, stopping at position: " << currentPosition << "at index" << index << std::endl;
                     //Move forward a little bit
                     std::cout << "extendLimitSwitch.readValue() " << extendLimitSwitch.readValue() << std::endl;
