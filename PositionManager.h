@@ -92,7 +92,7 @@ void PositionManager::performAcceleration(float& commandedPosition, float& curre
         auto controller_state = controller.sendReadCommand();
         if (controller_state[0] >= 450 && controller_state[0] <= 550) {
             currentPosition = controller_state[0];
-            torques.push_back(controller_state[2]);
+            //torques.push_back(controller_state[2]);
         }
         std::cout << i << "\t" << controller_state[2] << "\tTarget: " << commandedPosition
                   << "\tActual: " << currentPosition << "\t" << std::abs(commandedPosition - currentPosition) <<  "\tVelocity: " << controller_state[1] << std::endl;
@@ -115,7 +115,7 @@ void PositionManager::performCruising(float& commandedPosition, float& currentPo
         index++;
         if (controller_state[0] >= 450 && controller_state[0] <= 550) {
             currentPosition = controller_state[0];
-            torques.push_back(controller_state[2]);
+            // torques.push_back(controller_state[2]);
             // std::cout << "torque: " << controller_state[2] << std::endl;
 
             if (index > 23) {
@@ -249,6 +249,7 @@ void PositionManager::performAccelerationReverse(float& commandedPosition, float
 // CRUISING REVERSE
 void PositionManager::performCruisingReverse(float& commandedPosition, float& currentPosition) {
     std::cout << "CRUISING REVERSE" << std::endl;
+    torques.push_back(0.0);
     float stableVelocity = maxSpeed;
     int index = 0;
     while (currentPosition <= cruisingReverseEndPosition) {
@@ -262,8 +263,8 @@ void PositionManager::performCruisingReverse(float& commandedPosition, float& cu
             torques.push_back(controller_state[2]);
             // std::cout << "torque: " << controller_state[2] << std::endl;
 
-            if (index >13) {
-                if (controller_state[2] >= 0.20) {  // Check for torque limit indicating a stall or similar issue
+            if (index >7) {  //13
+                if (controller_state[2] >= 0.40) {  // Check for torque limit indicating a stall or similar issue
                     std::cout << "High torque/stall detected, stopping at position: " << currentPosition << "at index" << index << std::endl;
                     //Move forward a little bit
                     std::cout << "extendLimitSwitch.readValue() " << extendLimitSwitch.readValue() << std::endl;

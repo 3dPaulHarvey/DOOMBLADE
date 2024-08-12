@@ -34,7 +34,6 @@ int main() {
         return 1;
     }
     MyGpio safetySwitch("gpiochip0", 21);  //SAFETY BUTTON
-
     if (!safetySwitch.init()) {
         std::cerr << "Failed to initialize safety button" << std::endl;
         return 1;
@@ -57,7 +56,7 @@ int main() {
     const float cruisingReverseEndPosition = 501.8f; // 503.8f 0.6 gear
     const float stepsToAccelerate = 30.0f;  
     const float decelerationSteps = 10.0f; 
-    const float maxSpeed = 0.005f; //0.065      // Max speed in units per control loop iteration
+    const float maxSpeed = 0.065f; //0.065      // Max speed in units per control loop iteration
     const float decelerationPerStep = (maxSpeed / stepsToAccelerate);
     std::cout << "Deceleration per step: " << decelerationPerStep << std::endl;
     std::cout << "Deceleration per step x 20 setps: " << decelerationPerStep*20.0f << std::endl;
@@ -184,12 +183,12 @@ int main() {
             commandedPosition = 500.0f;
             currentPosition = 500.0f;
             positionManager.performAccelerationReverse(commandedPosition, currentPosition);
+            /////////////////////////////////////////////////////// //Graph the torque values collected
+            GraphPlotter plotter;
+            plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
+            return 0;
             positionManager.performCruisingReverse(commandedPosition, currentPosition);
 
-            /////////////////////////////////////////////////////// //Graph the torque values collected
-            // GraphPlotter plotter;
-            // plotter.plot(positionManager.getTorques(), "Torque Readings Through Various Phases");
-            // return 0;
 
             positionManager.performDecelerationReverse(commandedPosition, currentPosition);
             positionAverage = (commandedPosition + currentPosition) / 2.0f;
